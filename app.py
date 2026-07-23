@@ -71,10 +71,22 @@ def load_sheet():
         st.stop()
 
     df["번호"] = df["번호"].astype(int)
+
+    def to_bool(v):
+        s = str(v).strip().upper()
+        if s in ["TRUE", "예"]:
+            return True
+        if s in ["FALSE", "", "NAN", "NONE"]:
+            return False
+        try:
+            return float(v) != 0  # "1", "1.0", 1, 1.0 등 숫자형 값 처리
+        except (ValueError, TypeError):
+            return False
+
     for item in ALL_ITEMS:
         if item not in df.columns:
             df[item] = False
-        df[item] = df[item].apply(lambda v: str(v).strip().upper() in ["TRUE", "1", "예"])
+        df[item] = df[item].apply(to_bool)
 
     return df.set_index("번호").loc[NUMBERS]
 
