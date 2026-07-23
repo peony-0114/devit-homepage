@@ -52,11 +52,23 @@ def load_sheet():
         st.stop()
 
     if df.empty or "번호" not in df.columns:
-        # 여기 도달했다는 건 읽기는 성공했지만 시트가 정말 비어있는 경우
-        df = pd.DataFrame({"번호": NUMBERS})
-        for item in ALL_ITEMS:
-            df[item] = False
-        conn.update(worksheet=WORKSHEET_NAME, data=df)
+        # 자동으로 덮어쓰지 않는다 — 요청 폭주 등으로 읽기가 불안정할 때
+        # 실제 데이터가 있는데도 "비었다"고 오판해 지워버리는 사고를 막기 위함
+        st.warning(
+            "구글 시트에서 체크리스트 데이터를 찾지 못했어요. "
+            "실제로 시트가 비어있는 게 맞다면 아래 버튼으로 처음 설정을 진행하고, "
+            "그게 아니라면(데이터가 있는데 이 메시지가 뜬 거라면) 새로고침 후 다시 시도해주세요."
+        )
+        if st.button("📝 시트 처음 설정하기 (기존 데이터를 모두 지우고 새로 만듭니다)"):
+            init_df = pd.DataFrame({"번호": NUMBERS})
+            for item in ALL_ITEMS:
+                init_df[item] = False
+            try:
+                conn.update(worksheet=WORKSHEET_NAME, data=init_df)
+                st.success("초기 설정 완료! 위쪽에서 새로고침 해주세요.")
+            except Exception as e:
+                st.error(f"설정 중 오류가 발생했어요: {e}")
+        st.stop()
 
     df["번호"] = df["번호"].astype(int)
     for item in ALL_ITEMS:
@@ -111,13 +123,25 @@ with tab1:
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 변경 사항이 있으면 구글 시트에 저장
+    # 변경 사항 확인 (아직 저장은 안 함 — 로컬에서만 비교)
     new_df = pd.concat([acc_edited, devit_edited], axis=1)
-    if not new_df.equals(full_df):
+    has_changes = not new_df.equals(full_df)
+
+    save_col1, save_col2 = st.columns([1, 3])
+    with save_col1:
+        save_clicked = st.button("💾 저장하기", type="primary", disabled=not has_changes)
+    with save_col2:
+        if has_changes:
+            st.caption("✏️ 체크한 내용이 아직 저장 전이에요. 다 체크했으면 저장하기를 눌러주세요.")
+        else:
+            st.caption("✅ 모든 변경 사항이 저장되어 있어요.")
+
+    if save_clicked and has_changes:
         save_df = new_df.reset_index()
         try:
             conn.update(worksheet=WORKSHEET_NAME, data=save_df)
             st.session_state.sheet_df = new_df
+            st.success("저장됐어요!")
             st.rerun()
         except Exception as e:
             if "429" in str(e):
