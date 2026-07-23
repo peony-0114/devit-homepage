@@ -41,7 +41,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def load_sheet():
     """구글 시트에서 데이터를 읽어온다. 시트가 비어있으면 기본값으로 채운다."""
     try:
-        df = conn.read(worksheet=WORKSHEET_NAME, ttl=0)
+        df = conn.read(worksheet=WORKSHEET_NAME, ttl="30s")
         df = df.dropna(how="all")
     except Exception:
         df = pd.DataFrame()
@@ -109,9 +109,15 @@ with tab1:
     new_df = pd.concat([acc_edited, devit_edited], axis=1)
     if not new_df.equals(full_df):
         save_df = new_df.reset_index()
-        conn.update(worksheet=WORKSHEET_NAME, data=save_df)
-        st.session_state.sheet_df = new_df
-        st.rerun()
+        try:
+            conn.update(worksheet=WORKSHEET_NAME, data=save_df)
+            st.session_state.sheet_df = new_df
+            st.rerun()
+        except Exception as e:
+            if "429" in str(e):
+                st.warning("지금 접속자가 많아서 저장이 잠깐 지연되고 있어요. 몇 초 후 다시 눌러주세요 🙏")
+            else:
+                st.warning(f"저장 중 문제가 발생했어요: {e}")
  
     # 전체 현황 요약
     total_cells = len(NUMBERS) * len(ALL_ITEMS)
