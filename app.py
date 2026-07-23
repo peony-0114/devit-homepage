@@ -1,19 +1,19 @@
 import pandas as pd
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
- 
+
 st.set_page_config(
     page_title="3-10 반 홈페이지",
     page_icon="💻",
     layout="wide",
 )
- 
+
 NUMBERS = [n for n in range(1, 24) if n != 3]  # 1~23번, 3번 제외
 ACC_ITEMS = ["펜슬", "유선 마우스", "가방", "충전 어댑터"]
 DEVIT_ITEMS = ["자기 번호함에 넣었나요?", "자기 번호의 충전기를 연결했나요?"]
 WORKSHEET_NAME = "체크리스트"
 ALL_ITEMS = ACC_ITEMS + DEVIT_ITEMS
- 
+
 # ---------- 스타일 ----------
 st.markdown(
     """
@@ -33,55 +33,61 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
- 
+
 # ---------- 구글 시트 연결 ----------
 conn = st.connection("gsheets", type=GSheetsConnection)
- 
- 
+
+
 def load_sheet():
     """구글 시트에서 데이터를 읽어온다. 시트가 비어있으면 기본값으로 채운다."""
     try:
         df = conn.read(worksheet=WORKSHEET_NAME, ttl="30s")
         df = df.dropna(how="all")
     except Exception:
-        df = pd.DataFrame()
- 
+        # 읽기 자체가 실패한 경우: 빈 시트로 착각해 초기화하면 안 되므로 바로 중단
+        st.error(
+            "지금 구글 시트 연결이 원활하지 않아요 (요청이 많거나 일시적인 오류일 수 있어요). "
+            "잠시 후 새로고침(F5)해서 다시 시도해주세요 🙏"
+        )
+        st.stop()
+
     if df.empty or "번호" not in df.columns:
+        # 여기 도달했다는 건 읽기는 성공했지만 시트가 정말 비어있는 경우
         df = pd.DataFrame({"번호": NUMBERS})
         for item in ALL_ITEMS:
             df[item] = False
         conn.update(worksheet=WORKSHEET_NAME, data=df)
- 
+
     df["번호"] = df["번호"].astype(int)
     for item in ALL_ITEMS:
         if item not in df.columns:
             df[item] = False
         df[item] = df[item].apply(lambda v: str(v).strip().upper() in ["TRUE", "1", "예"])
- 
+
     return df.set_index("번호").loc[NUMBERS]
- 
- 
+
+
 if "sheet_df" not in st.session_state:
     st.session_state.sheet_df = load_sheet()
- 
- 
+
+
 # ---------- 탭 구성 ----------
 tab1, tab2 = st.tabs(["📦 디벗·악세사리 정리", "💊 신뢰할 수 있는 건강정보 캠페인"])
- 
+
 # =========================================================
 # 탭 1: 디벗 정리
 # =========================================================
 with tab1:
     full_df = st.session_state.sheet_df
- 
+
     st.markdown('<div class="main-title">📦 3-10 디벗이랑 악세사리 정리하자!</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-title">번호별로 체크박스를 눌러서 확인해요 ✅ (표 안 칸을 바로 클릭하면 돼요)</div>', unsafe_allow_html=True)
- 
+
     # 항목 1: 악세사리 체크리스트
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🎒 1. 악세사리 체크리스트</div>', unsafe_allow_html=True)
     st.caption("왼쪽 열에서 내 번호를 찾아 해당 칸을 체크하세요.")
- 
+
     acc_column_config = {item: st.column_config.CheckboxColumn(item, default=False) for item in ACC_ITEMS}
     acc_edited = st.data_editor(
         full_df[ACC_ITEMS],
@@ -90,12 +96,12 @@ with tab1:
         key="acc_editor",
     )
     st.markdown('</div>', unsafe_allow_html=True)
- 
+
     # 항목 2: 디벗 체크리스트
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">💻 2. 디벗 체크리스트</div>', unsafe_allow_html=True)
     st.caption("왼쪽 열에서 내 번호를 찾아 해당 칸을 체크하세요.")
- 
+
     devit_column_config = {item: st.column_config.CheckboxColumn(item, default=False) for item in DEVIT_ITEMS}
     devit_edited = st.data_editor(
         full_df[DEVIT_ITEMS],
@@ -104,7 +110,7 @@ with tab1:
         key="devit_editor",
     )
     st.markdown('</div>', unsafe_allow_html=True)
- 
+
     # 변경 사항이 있으면 구글 시트에 저장
     new_df = pd.concat([acc_edited, devit_edited], axis=1)
     if not new_df.equals(full_df):
@@ -118,34 +124,34 @@ with tab1:
                 st.warning("지금 접속자가 많아서 저장이 잠깐 지연되고 있어요. 몇 초 후 다시 눌러주세요 🙏")
             else:
                 st.warning(f"저장 중 문제가 발생했어요: {e}")
- 
+
     # 전체 현황 요약
     total_cells = len(NUMBERS) * len(ALL_ITEMS)
     checked_cells = int(full_df[ALL_ITEMS].sum().sum())
     st.progress(checked_cells / total_cells if total_cells else 0)
     st.caption(f"우리 반 전체 진행률: {checked_cells} / {total_cells}")
- 
+
     not_done = [n for n in NUMBERS if not full_df.loc[n, ALL_ITEMS].all()]
     if not_done:
         st.info("아직 다 체크하지 않은 번호: " + ", ".join(str(n) + "번" for n in not_done))
     else:
         st.success("전체 다 체크 완료! 오늘도 수고했습니다 🙌")
- 
+
     if st.button("🔄 새로고침", key="refresh_devit"):
         st.session_state.sheet_df = load_sheet()
         st.rerun()
- 
+
     # 항목 3: 웨일 수리 자기부담비
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">⚠️ 3. 웨일북 수리 자기부담비</div>', unsafe_allow_html=True)
     st.caption("파손·분실 시 아래 기준으로 자기부담비가 발생할 수 있어요. 미리 확인하고 소중히 다뤄주세요!")
     st.image("assets/repair_fee.png", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
- 
+
     st.markdown("---")
     st.caption("3-10반 정보부장 제작 · 매일 하교 전 체크하는 습관을 들여봐요 😊")
- 
- 
+
+
 # =========================================================
 # 탭 2: 신뢰할 수 있는 건강정보 캠페인
 # =========================================================
@@ -155,7 +161,7 @@ with tab2:
         '<div class="sub-title">온라인 의약품 오정보 문제, 우리가 먼저 똑똑하게 확인해요</div>',
         unsafe_allow_html=True,
     )
- 
+
     # 캠페인 소개
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">📌 캠페인 소개</div>', unsafe_allow_html=True)
@@ -165,11 +171,11 @@ with tab2:
         "특히 청소년 사이에서 잘못 알려진 약물 오남용 문제를 함께 짚어보기 위해 만들어졌습니다."
     )
     st.markdown('</div>', unsafe_allow_html=True)
- 
+
     # 신뢰할 수 있는 자료원
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">✅ 신뢰할 수 있는 건강정보 자료원</div>', unsafe_allow_html=True)
- 
+
     sources = [
         {
             "name": "식품의약품안전처 (식약처)",
@@ -187,7 +193,7 @@ with tab2:
             "url": "https://nedrug.mfds.go.kr",
         },
     ]
- 
+
     for s in sources:
         st.markdown(
             f"""
@@ -201,16 +207,16 @@ with tab2:
         )
     st.caption("반 게시판(교실 게시판·단체방)에도 위 자료원 링크를 함께 안내하고 있어요.")
     st.markdown('</div>', unsafe_allow_html=True)
- 
+
     # 카드뉴스: 중추신경자극제 오남용 (이미지 기반)
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🧠 카드뉴스: "공부 잘하는 약", 정말 안전할까?</div>', unsafe_allow_html=True)
     st.caption("카드를 넘기듯 하나씩 읽어보세요.")
- 
+
     # assets/cardnews/card1.png ~ card5.png (이미지 안에 텍스트가 이미 있어 캡션은 사용하지 않음)
     CARD_COUNT = 5
     card_captions = ["", "", "", "", ""]
- 
+
     card_cols = st.columns(3)
     missing_cards = []
     for i in range(CARD_COUNT):
@@ -230,14 +236,13 @@ with tab2:
                     """,
                     unsafe_allow_html=True,
                 )
- 
+
     if missing_cards:
         st.caption(
             f"⏳ 아직 업로드되지 않은 카드: {', '.join(str(n) for n in missing_cards)}번. "
             f"`assets/cardnews/` 폴더에 `card1.png`부터 `card5.png` 순서로 넣어주세요."
         )
     st.markdown('</div>', unsafe_allow_html=True)
- 
+
     st.markdown("---")
     st.caption("3-10반 신뢰할 수 있는 건강정보 찾기 캠페인 · 함께 만드는 건강한 정보 환경")
- 
