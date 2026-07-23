@@ -140,6 +140,7 @@ with tab1:
         save_df = new_df.reset_index()
         try:
             conn.update(worksheet=WORKSHEET_NAME, data=save_df)
+            st.cache_data.clear()  # 저장 직후 캐시를 비워, 새로고침 시 옛날 데이터가 보이지 않도록 함
             st.session_state.sheet_df = new_df
             st.success("저장됐어요!")
             st.rerun()
@@ -162,6 +163,7 @@ with tab1:
         st.success("전체 다 체크 완료! 오늘도 수고했습니다 🙌")
 
     if st.button("🔄 새로고침", key="refresh_devit"):
+        st.cache_data.clear()
         st.session_state.sheet_df = load_sheet()
         st.rerun()
 
